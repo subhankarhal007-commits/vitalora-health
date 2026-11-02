@@ -4,14 +4,10 @@ import { ShieldCheck, Mail, ArrowRight, HeartHandshake, CheckCircle2 } from 'luc
 
 interface FooterProps {
   onOpenPage: (slug: 'about-us' | 'contact-us' | 'privacy-policy' | 'terms-and-conditions' | 'medical-disclaimer' | 'affiliate-disclosure') => void;
-  onOpenAdmin: () => void;
-  isAdminLoggedIn: boolean;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onOpenPage,
-  onOpenAdmin,
-  isAdminLoggedIn,
 }) => {
   const [emailInput, setEmailInput] = useState('');
   const [subscribed, setSubscribed] = useState(false);
@@ -112,14 +108,6 @@ export const Footer: React.FC<FooterProps> = ({
                   className="hover:text-emerald-400 transition-colors text-left cursor-pointer"
                 >
                   Terms and Conditions
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={onOpenAdmin}
-                  className="text-xs text-slate-400 hover:text-emerald-300 transition-colors pt-2 block cursor-pointer"
-                >
-                  {isAdminLoggedIn ? '⚡ Admin Dashboard' : '🔒 Admin Portal'}
                 </button>
               </li>
             </ul>

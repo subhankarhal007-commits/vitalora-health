@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Article, FooterPage } from './types/index.ts';
-import { fetchArticles, verifyAdminSession, deleteArticle } from './lib/api.ts';
+import { fetchArticles, verifyAdminSession, deleteArticle, removeAdminToken } from './lib/api.ts';
 import { Header } from './components/Header.tsx';
 import { Footer } from './components/Footer.tsx';
 import { ArticleCard } from './components/ArticleCard.tsx';
@@ -10,19 +10,16 @@ import { AdminLogin } from './components/AdminLogin.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import {
   Sparkles,
-  TrendingUp,
   Leaf,
   ShieldCheck,
   CheckCircle2,
   Search,
   BookOpen,
-  ArrowRight,
   Loader2,
-  Calendar,
-  Clock,
-  Heart,
   PlusCircle,
-  AlertCircle
+  LayoutDashboard,
+  LogOut,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function App() {
@@ -31,14 +28,13 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Routing State
-  const [currentView, setCurrentView] = useState<'home' | 'article' | 'page' | 'admin'>('home');
+  // Routing State: home, article, page, admin, or admin-login
+  const [currentView, setCurrentView] = useState<'home' | 'article' | 'page' | 'admin' | 'admin-login'>('home');
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [selectedPageSlug, setSelectedPageSlug] = useState<FooterPage['slug']>('about-us');
 
   // Admin Auth & Editor State
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [adminInitialTab, setAdminInitialTab] = useState<'articles' | 'editor' | 'pages'>('articles');
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [isNewlyPublished, setIsNewlyPublished] = useState(false);
@@ -49,21 +45,47 @@ export default function App() {
     setTimeout(() => setToastNotification(null), 4000);
   };
 
+  const isExplicitAdminUrl = () => {
+    const path = window.location.pathname.toLowerCase();
+    const searchParams = new URLSearchParams(window.location.search);
+    return (
+      path === '/admin' ||
+      path === '/admin/' ||
+      path === '/vitalora-admin' ||
+      path === '/vitalora-admin/' ||
+      searchParams.has('admin') ||
+      searchParams.get('view') === 'admin'
+    );
+  };
+
   // Check admin session on mount
   useEffect(() => {
-    verifyAdminSession().then(setIsAdminLoggedIn);
+    verifyAdminSession().then((loggedIn) => {
+      setIsAdminLoggedIn(loggedIn);
+      if (isExplicitAdminUrl()) {
+        if (loggedIn) {
+          setCurrentView('admin');
+        } else {
+          setCurrentView('admin-login');
+        }
+      }
+    });
   }, []);
 
   // Handle URL Sync (Back/Forward and direct bookmarking)
   useEffect(() => {
     const handlePopState = () => {
-      const path = window.location.pathname;
+      const path = window.location.pathname.toLowerCase();
       const searchParams = new URLSearchParams(window.location.search);
       const articleSlug = searchParams.get('article');
       const pageSlug = searchParams.get('page');
 
-      if (path === '/admin' || searchParams.get('view') === 'admin') {
-        setCurrentView('admin');
+      if (isExplicitAdminUrl()) {
+        if (isAdminLoggedIn) {
+          setCurrentView('admin');
+        } else {
+          setCurrentView('admin-login');
+        }
       } else if (articleSlug) {
         const found = articles.find(a => a.slug === articleSlug || a.id === articleSlug);
         if (found) {
@@ -80,7 +102,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [articles]);
+  }, [articles, isAdminLoggedIn]);
 
   // Load articles
   const loadArticles = async () => {
@@ -93,19 +115,18 @@ export default function App() {
       const searchParams = new URLSearchParams(window.location.search);
       const articleSlug = searchParams.get('article');
       const pageSlug = searchParams.get('page');
-      const viewParam = searchParams.get('view');
 
-      if (viewParam === 'admin') {
-        setCurrentView('admin');
-      } else if (articleSlug) {
-        const target = data.find(a => a.slug === articleSlug || a.id === articleSlug);
-        if (target) {
-          setSelectedArticle(target);
-          setCurrentView('article');
+      if (!isExplicitAdminUrl()) {
+        if (articleSlug) {
+          const target = data.find(a => a.slug === articleSlug || a.id === articleSlug);
+          if (target) {
+            setSelectedArticle(target);
+            setCurrentView('article');
+          }
+        } else if (pageSlug) {
+          setSelectedPageSlug(pageSlug as any);
+          setCurrentView('page');
         }
-      } else if (pageSlug) {
-        setSelectedPageSlug(pageSlug as any);
-        setCurrentView('page');
       }
     } catch (err) {
       console.error('Error fetching articles:', err);
@@ -118,7 +139,7 @@ export default function App() {
     loadArticles();
   }, []);
 
-  // Navigation Handlers with SEO friendly URL updating
+  // Navigation Handlers with URL updating
   const handleNavigateHome = () => {
     setCurrentView('home');
     setSelectedArticle(null);
@@ -142,33 +163,24 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleOpenAdmin = () => {
-    if (isAdminLoggedIn) {
-      setAdminInitialTab('articles');
-      setEditingArticle(null);
-      setCurrentView('admin');
-      window.history.pushState({}, '', '/?view=admin');
+  const handleOpenAdminEditor = (articleToEdit?: Article) => {
+    if (articleToEdit) {
+      setEditingArticle(articleToEdit);
     } else {
-      setShowAdminLoginModal(true);
-    }
-  };
-
-  const handleWritePostClick = () => {
-    if (isAdminLoggedIn) {
       setEditingArticle(null);
-      setAdminInitialTab('editor');
-      setCurrentView('admin');
-      window.history.pushState({}, '', '/?view=admin');
-    } else {
-      setShowAdminLoginModal(true);
     }
-  };
-
-  const handleEditArticle = (article: Article) => {
-    setEditingArticle(article);
     setAdminInitialTab('editor');
     setCurrentView('admin');
-    window.history.pushState({}, '', '/?view=admin');
+    window.history.pushState({}, '', '/admin');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenAdminDashboard = () => {
+    setEditingArticle(null);
+    setAdminInitialTab('articles');
+    setCurrentView('admin');
+    window.history.pushState({}, '', '/admin');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // POST REMOVAL / DELETION HANDLER
@@ -187,16 +199,18 @@ export default function App() {
 
   const handleAdminLoginSuccess = () => {
     setIsAdminLoggedIn(true);
-    setShowAdminLoginModal(false);
     setCurrentView('admin');
-    window.history.pushState({}, '', '/?view=admin');
+    window.history.pushState({}, '', '/admin');
+    showToast('Signed in successfully. Full control panel ready.');
     loadArticles();
   };
 
   const handleAdminLogout = () => {
+    removeAdminToken();
     setIsAdminLoggedIn(false);
     setCurrentView('home');
     window.history.pushState({}, '', '/');
+    showToast('Signed out of Admin Mode');
     loadArticles();
   };
 
@@ -220,7 +234,7 @@ export default function App() {
   const featuredArticle = filteredArticles.length > 0 ? filteredArticles[0] : null;
   const remainingArticles = filteredArticles.slice(1);
 
-  // If in Admin view, render admin dashboard
+  // VIEW 1: Dedicated Admin Dashboard (when logged in and on admin view)
   if (currentView === 'admin' && isAdminLoggedIn) {
     return (
       <AdminDashboard
@@ -244,6 +258,17 @@ export default function App() {
     );
   }
 
+  // VIEW 2: Dedicated Admin Login Gateway (when accessing /admin or ?admin unauthenticated)
+  if (currentView === 'admin-login' || (currentView === 'admin' && !isAdminLoggedIn)) {
+    return (
+      <AdminLogin
+        onSuccess={handleAdminLoginSuccess}
+        onCancel={handleNavigateHome}
+      />
+    );
+  }
+
+  // VIEW 3: Public Website (with optional floating admin toolbar if admin session is active)
   return (
     <div className="leaf-pattern-bg min-h-screen flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-950">
       {/* Toast Notification */}
@@ -254,7 +279,51 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
+      {/* FLOATING ADMIN PRIVILEGED BAR - ONLY VISIBLE TO LOGGED IN ADMIN */}
+      {isAdminLoggedIn && (
+        <aside aria-label="Admin bar" className="bg-slate-950 text-slate-200 border-b border-emerald-900/60 px-4 py-2 text-xs sticky top-0 z-50 shadow-md">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold text-white text-xs tracking-wide">
+                🌿 Vitalora Admin Mode Active
+              </span>
+              <span className="text-slate-400 hidden sm:inline text-[11px]">
+                (Private to you: manage posts, edits & controls)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleOpenAdminEditor()}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>+ Write New Post</span>
+              </button>
+
+              <button
+                onClick={handleOpenAdminDashboard}
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Admin Dashboard</span>
+              </button>
+
+              <button
+                onClick={handleAdminLogout}
+                className="inline-flex items-center gap-1 text-slate-400 hover:text-red-400 px-2 py-1 text-xs font-medium transition-colors cursor-pointer"
+                title="Sign out of admin mode"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Public Header - Clean with no public admin buttons */}
       <Header
         activeCategory={activeCategory}
         onSelectCategory={(cat) => {
@@ -264,9 +333,6 @@ export default function App() {
           }
         }}
         onNavigateHome={handleNavigateHome}
-        onOpenAdmin={handleOpenAdmin}
-        onWritePost={handleWritePostClick}
-        isAdminLoggedIn={isAdminLoggedIn}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -287,14 +353,14 @@ export default function App() {
             }}
             isAdminLoggedIn={isAdminLoggedIn}
             onDeleteArticle={handleDeleteArticle}
-            onEditArticle={handleEditArticle}
+            onEditArticle={(art) => handleOpenAdminEditor(art)}
             isNewlyPublished={isNewlyPublished}
           />
         ) : currentView === 'page' ? (
           <PageView
             slug={selectedPageSlug}
             onBack={handleNavigateHome}
-            onOpenAdmin={handleOpenAdmin}
+            onOpenAdmin={handleOpenAdminDashboard}
             isAdminLoggedIn={isAdminLoggedIn}
           />
         ) : (
@@ -359,13 +425,15 @@ export default function App() {
                   >
                     View All Articles
                   </button>
-                  <button
-                    onClick={handleWritePostClick}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-4 py-2 rounded-full cursor-pointer shadow-xs"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Write First Post</span>
-                  </button>
+                  {isAdminLoggedIn && (
+                    <button
+                      onClick={() => handleOpenAdminEditor()}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-4 py-2 rounded-full cursor-pointer shadow-xs"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Write First Post</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -389,7 +457,7 @@ export default function App() {
                       featured={true}
                       isAdminLoggedIn={isAdminLoggedIn}
                       onDelete={handleDeleteArticle}
-                      onEdit={handleEditArticle}
+                      onEdit={(art) => handleOpenAdminEditor(art)}
                     />
                   </div>
                 )}
@@ -409,7 +477,7 @@ export default function App() {
                       </span>
                       {isAdminLoggedIn && (
                         <button
-                          onClick={handleWritePostClick}
+                          onClick={() => handleOpenAdminEditor()}
                           className="text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200"
                         >
                           <PlusCircle className="w-3.5 h-3.5" />
@@ -420,7 +488,6 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {/* If featured is shown above, only show remaining; otherwise show all */}
                     {(featuredArticle && !searchQuery && activeCategory === 'All'
                       ? remainingArticles
                       : filteredArticles
@@ -431,7 +498,7 @@ export default function App() {
                         onReadMore={handleSelectArticle}
                         isAdminLoggedIn={isAdminLoggedIn}
                         onDelete={handleDeleteArticle}
-                        onEdit={handleEditArticle}
+                        onEdit={(target) => handleOpenAdminEditor(target)}
                       />
                     ))}
                   </div>
@@ -466,20 +533,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer on every page */}
-      <Footer
-        onOpenPage={handleOpenPage}
-        onOpenAdmin={handleOpenAdmin}
-        isAdminLoggedIn={isAdminLoggedIn}
-      />
-
-      {/* Admin Login Modal (When user clicks Admin Portal or Write Post while unauthenticated) */}
-      {showAdminLoginModal && (
-        <AdminLogin
-          onSuccess={handleAdminLoginSuccess}
-          onCancel={() => setShowAdminLoginModal(false)}
-        />
-      )}
+      {/* Footer on every page - completely clean without admin link */}
+      <Footer onOpenPage={handleOpenPage} />
     </div>
   );
 }
