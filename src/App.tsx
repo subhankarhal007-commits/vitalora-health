@@ -10,6 +10,7 @@ import { AdminLogin } from './components/AdminLogin.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { AdsterraBanner } from './components/AdsterraBanner.tsx';
 import { AdsterraNative } from './components/AdsterraNative.tsx';
+import { AdsterraSocialBar } from './components/AdsterraSocialBar.tsx';
 import {
   Sparkles,
   Leaf,
@@ -339,10 +340,15 @@ export default function App() {
         onSearchChange={setSearchQuery}
       />
 
-      {/* Top Ad Unit (Leaderboard 728x90 on Desktop, 320x50 on Mobile) */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <AdsterraBanner type="responsive-header" className="my-2 sm:my-3" />
-      </div>
+      {/* Public Adsterra Social Bar - Strictly disabled in admin mode */}
+      <AdsterraSocialBar disabled={isAdminLoggedIn || isExplicitAdminUrl()} />
+
+      {/* Top Ad Unit (Leaderboard 728x90 on Desktop, 320x50 on Mobile) - Public Only */}
+      {!isAdminLoggedIn && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <AdsterraBanner type="responsive-header" className="my-2 sm:my-3" />
+        </div>
+      )}
 
       {/* Main Content Router */}
       <main className="flex-1">
@@ -469,10 +475,12 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Homepage Mid-Section 300x250 Rectangle Ad */}
-                <div className="flex justify-center my-6">
-                  <AdsterraBanner type="rectangle" />
-                </div>
+                {/* Homepage Mid-Section 300x250 Rectangle Ad - Public Only */}
+                {!isAdminLoggedIn && (
+                  <div className="flex justify-center my-6">
+                    <AdsterraBanner type="rectangle" />
+                  </div>
+                )}
 
                 {/* 2. MAIN HEALTH ARTICLES GRID */}
                 <div className="space-y-6">
@@ -516,8 +524,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Adsterra Native Sponsored Recommendations */}
-                <AdsterraNative className="my-8" />
+                {/* Adsterra Native Sponsored Recommendations - Public Only */}
+                {!isAdminLoggedIn && (
+                  <AdsterraNative className="my-8" />
+                )}
 
                 {/* CLINICAL STANDARDS BANNER */}
                 <section className="bg-white rounded-3xl border border-emerald-100 p-8 sm:p-10 shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
@@ -548,10 +558,12 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Ad Unit (Leaderboard on Desktop, Mobile Banner on Mobile) */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <AdsterraBanner type="responsive-footer" className="my-4" />
-      </div>
+      {/* Bottom Ad Unit (Leaderboard on Desktop, Mobile Banner on Mobile) - Public Only */}
+      {!isAdminLoggedIn && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <AdsterraBanner type="responsive-footer" className="my-4" />
+        </div>
+      )}
 
       {/* Footer on every page - completely clean without admin link */}
       <Footer onOpenPage={handleOpenPage} />

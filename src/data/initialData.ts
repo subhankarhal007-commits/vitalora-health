@@ -18,7 +18,7 @@ export const initialArticles: Article[] = [
     readTime: '6 min read',
     status: 'published',
     tags: ['Sleep Science', 'Circadian Rhythm', 'Energy', 'Melatonin', 'Biohacking'],
-    views: 1420,
+    views: 0,
     content: `<h2>Understanding Your Master Biological Clock</h2>
 <p>Deep within the hypothalamus lies a tiny cluster of roughly 20,000 neurons called the <strong>suprachiasmatic nucleus (SCN)</strong>. This biological master clock orchestrates virtually every cellular rhythm in your body: body temperature fluctuations, cortisol release, cellular DNA repair, and nighttime melatonin secretion.</p>
 <p>When our modern lifestyles decouple our internal clocks from the 24-hour solar cycle—through late-night artificial lighting, erratic eating schedules, and indoor work environments—the result isn't just grogginess. Chronic circadian disruption is now clinically linked to metabolic dysregulation, weakened immune defense, and elevated cardiovascular risks.</p>
@@ -78,7 +78,7 @@ export const initialArticles: Article[] = [
     readTime: '7 min read',
     status: 'published',
     tags: ['Nutrition', 'Gut Health', 'Microbiome', 'Anti-Inflammatory', 'Whole Foods'],
-    views: 1890,
+    views: 0,
     content: `<h2>The Gut Barrier as the Epicenter of Immune Health</h2>
 <p>Over 70% of human immune cells reside within the gut-associated lymphoid tissue (GALT), separated from trillions of luminal bacteria by a single layer of epithelial cells. When this delicate mucosal barrier becomes compromised by ultra-processed foods, chronic psychological stress, and environmental toxins, endotoxins such as lipopolysaccharides (LPS) leak into systemic circulation, sparking low-grade chronic inflammation.</p>
 
@@ -133,7 +133,7 @@ export const initialArticles: Article[] = [
     readTime: '5 min read',
     status: 'published',
     tags: ['Cardio', 'Mitochondria', 'Zone 2', 'Fitness', 'Endurance', 'Heart Health'],
-    views: 1145,
+    views: 0,
     content: `<h2>Rethinking Intensity: The Myth of "No Pain, No Gain"</h2>
 <p>In modern fitness culture, grueling high-intensity interval training (HIIT) often dominates headlines. However, leading sports cardiologists and longevity researchers emphasize that the true cornerstone of human metabolic capacity lies at the opposite end of the spectrum: <strong>Zone 2 Aerobic Training</strong>.</p>
 <p>Zone 2 is characterized by exercise at an intensity where blood lactate concentrations remain low (between 1.5 and 2.0 mmol/L). At this physiological threshold, your slow-twitch Type I muscle fibers rely almost exclusively on fat oxidation inside your mitochondria to generate ATP.</p>
@@ -175,7 +175,7 @@ export const initialArticles: Article[] = [
     readTime: '6 min read',
     status: 'published',
     tags: ['Mental Health', 'Vagus Nerve', 'Stress Relief', 'Breathwork', 'Mindfulness'],
-    views: 2150,
+    views: 0,
     content: `<h2>The Cost of Modern Sympathetic Overdrive</h2>
 <p>The human autonomic nervous system evolved to mobilize rapid fight-or-flight responses when facing immediate physical danger. Today, however, constant notifications, professional deadlines, and chronic cognitive overload keep our sympathetic branch perpetually engaged. Over time, elevated cortisol and adrenaline lead to sleep disturbances, digestive stagnation, and emotional fatigue.</p>
 <p>The antidote is actively exercising the <strong>Vagus Nerve</strong>—the 10th cranial nerve that runs from the brainstem down to the heart, lungs, and digestive tract, acting as the primary superhighway of the parasympathetic "rest, digest, and repair" system.</p>
@@ -219,7 +219,7 @@ export const initialArticles: Article[] = [
     readTime: '8 min read',
     status: 'published',
     tags: ['Preventive Care', 'Blood Work', 'Biomarkers', 'Cardiology', 'ApoB'],
-    views: 980,
+    views: 0,
     content: `<h2>The Limitations of Conventional Reference Ranges</h2>
 <p>Most standard medical lab reference ranges represent statistical population averages (within two standard deviations of the mean) rather than markers of optimal biological vitality. Because the general population experiences high rates of insulin resistance and sedentary lifestyles, being "in range" does not necessarily equal thriving health.</p>
 
@@ -267,7 +267,7 @@ export const initialArticles: Article[] = [
     readTime: '6 min read',
     status: 'published',
     tags: ['Longevity', 'Autophagy', 'Cellular Health', 'Fasting', 'Mitochondria'],
-    views: 1650,
+    views: 0,
     content: `<h2>The Nobel-Prize Winning Machinery of Autophagy</h2>
 <p>Derived from the Greek words for "self-eating," <strong>autophagy</strong> is your body's evolutionary housekeeping program. Discovered in depth by Japanese cell biologist Dr. Yoshinori Ohsumi (earning the 2016 Nobel Prize in Physiology or Medicine), autophagy degrades damaged organelles, misfolded protein aggregates, and intracellular pathogens inside acidic lysosomes.</p>
 <p>Without sufficient autophagy, senescence-associated secretory phenotypes (SASP) accumulate, driving what scientists call "inflammaging"—the slow, chronic inflammation characteristic of degenerative decline.</p>

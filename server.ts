@@ -279,6 +279,33 @@ async function startServer() {
     res.json(article);
   });
 
+  // Dedicated endpoint to record a public reader view
+  app.post('/api/articles/:slugOrId/view', (req: Request, res: Response) => {
+    const { slugOrId } = req.params;
+    const articles = getArticles();
+    const articleIndex = articles.findIndex(a => a.slug === slugOrId || a.id === slugOrId);
+
+    if (articleIndex === -1) {
+      res.status(404).json({ error: 'Article not found' });
+      return;
+    }
+
+    const authHeader = req.headers.authorization;
+    let isAdmin = false;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const admin = getAdmin();
+      isAdmin = !!(admin.tokens && admin.tokens.includes(token));
+    }
+
+    if (!isAdmin) {
+      articles[articleIndex].views = (articles[articleIndex].views || 0) + 1;
+      saveArticles(articles);
+    }
+
+    res.json({ success: true, views: articles[articleIndex].views });
+  });
+
   // Create new article - always save permanently to database
   app.post('/api/articles', (req: Request, res: Response) => {
     const {

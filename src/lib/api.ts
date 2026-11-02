@@ -189,6 +189,36 @@ export async function fetchArticleBySlug(slugOrId: string): Promise<Article> {
   throw new Error('Article not found');
 }
 
+export async function recordArticleView(slugOrId: string): Promise<number> {
+  try {
+    const res = await fetch(`/api/articles/${encodeURIComponent(slugOrId)}/view`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const local = getLocalArticles();
+      const idx = local.findIndex(a => a.id === slugOrId || a.slug === slugOrId);
+      if (idx !== -1) {
+        local[idx].views = data.views;
+        localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify(local));
+      }
+      return data.views;
+    }
+  } catch (err) {
+    console.warn('Failed to record view on server:', err);
+  }
+
+  const local = getLocalArticles();
+  const idx = local.findIndex(a => a.id === slugOrId || a.slug === slugOrId);
+  if (idx !== -1) {
+    local[idx].views = (local[idx].views || 0) + 1;
+    localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify(local));
+    return local[idx].views;
+  }
+  return 1;
+}
+
 export async function createArticle(data: Partial<Article>): Promise<Article> {
   let createdArticle: Article;
 

@@ -7,6 +7,15 @@ interface AdsterraNativeProps {
 export const AdsterraNative: React.FC<AdsterraNativeProps> = ({ className = '' }) => {
   const id = useId();
 
+  // Strictly block ads from rendering in any admin view or admin URL
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (path.includes('admin') || search.includes('admin')) {
+      return null;
+    }
+  }
+
   const srcDoc = `
     <!DOCTYPE html>
     <html lang="en">

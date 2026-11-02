@@ -379,6 +379,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return true;
   });
 
+  // Dynamic Real / Original Stats strictly computed from actual live database records (No demo / mock numbers)
+  const realTotalArticles = articles.length;
+  const realPublishedCount = articles.filter(art => art.status === 'published').length;
+  const realDraftCount = articles.filter(art => art.status === 'draft').length;
+  const realTotalViews = articles.reduce((acc, curr) => acc + (curr.views || 0), 0);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800">
       {/* Toast Notification */}
@@ -480,8 +486,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
-        {/* STATS OVERVIEW CARDS (Visible on articles tab) */}
-        {activeTab === 'articles' && stats && (
+        {/* STATS OVERVIEW CARDS (Visible on articles tab) - 100% REAL / ORIGINAL DATA */}
+        {activeTab === 'articles' && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
@@ -489,10 +495,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-3xl font-extrabold text-slate-900 font-serif">
-                  {stats.totalArticles}
+                  {realTotalArticles}
                 </span>
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  All Records
+                  Original Records
                 </span>
               </div>
             </div>
@@ -503,10 +509,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-3xl font-extrabold text-emerald-700 font-serif">
-                  {stats.publishedCount}
+                  {realPublishedCount}
                 </span>
                 <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                  Visible to Public
+                  Live on Site
                 </span>
               </div>
             </div>
@@ -517,10 +523,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-3xl font-extrabold text-amber-600 font-serif">
-                  {stats.draftCount}
+                  {realDraftCount}
                 </span>
                 <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                  Unpublished
+                  In Progress
                 </span>
               </div>
             </div>
@@ -531,10 +537,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-3xl font-extrabold text-teal-800 font-serif">
-                  {stats.totalViews.toLocaleString()}
+                  {realTotalViews.toLocaleString()}
                 </span>
                 <span className="text-xs font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" /> Reads
+                  <TrendingUp className="w-3 h-3" /> Real Visits
                 </span>
               </div>
             </div>

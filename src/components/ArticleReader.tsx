@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Article } from '../types/index.ts';
+import { recordArticleView } from '../lib/api.ts';
 import { AdsterraBanner } from './AdsterraBanner.tsx';
 import { AdsterraNative } from './AdsterraNative.tsx';
 import {
@@ -70,7 +71,12 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
       });
     });
     setToc(items);
-  }, [article]);
+
+    // Record original reader view for genuine public visitors (never in admin preview)
+    if (!isAdminLoggedIn) {
+      recordArticleView(article.id).catch(() => {});
+    }
+  }, [article, isAdminLoggedIn]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -334,8 +340,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           )}
         </div>
 
-        {/* Top Ad Unit (Leaderboard on Desktop, Mobile Banner on Phone) */}
-        <AdsterraBanner type="responsive-header" className="my-6" />
+        {/* Top Ad Unit (Leaderboard on Desktop, Mobile Banner on Phone) - Public Only */}
+        {!isAdminLoggedIn && (
+          <AdsterraBanner type="responsive-header" className="my-6" />
+        )}
 
         {/* Quick Table of Contents (if multiple headings exist) */}
         {toc.length > 2 && (
@@ -363,8 +371,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           dangerouslySetInnerHTML={{ __html: article.content }}
         />
 
-        {/* Mid/Post Content Ad Unit (300x250 Rectangle) */}
-        <AdsterraBanner type="rectangle" className="my-8" />
+        {/* Mid/Post Content Ad Unit (300x250 Rectangle) - Public Only */}
+        {!isAdminLoggedIn && (
+          <AdsterraBanner type="rectangle" className="my-8" />
+        )}
 
         {/* Tags */}
         {article.tags && article.tags.length > 0 && (
@@ -395,8 +405,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           </p>
         </div>
 
-        {/* Adsterra Native Banner Unit (Sponsored Recommendations) */}
-        <AdsterraNative className="mt-10 mb-4" />
+        {/* Adsterra Native Banner Unit (Sponsored Recommendations) - Public Only */}
+        {!isAdminLoggedIn && (
+          <AdsterraNative className="mt-10 mb-4" />
+        )}
 
         {/* Related Articles Section */}
         {relatedArticles.length > 0 && (

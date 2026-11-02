@@ -8,6 +8,15 @@ interface AdsterraBannerProps {
 export const AdsterraBanner: React.FC<AdsterraBannerProps> = ({ type, className = '' }) => {
   const id = useId();
 
+  // Strictly block ads from rendering in any admin view or admin URL
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (path.includes('admin') || search.includes('admin')) {
+      return null;
+    }
+  }
+
   // Helper to construct self-contained iframe document for Adsterra banner scripts
   const createSrcDoc = (key: string, width: number, height: number) => `
     <!DOCTYPE html>
