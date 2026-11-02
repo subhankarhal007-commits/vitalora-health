@@ -1,4 +1,5 @@
 import { Article, FooterPage, SiteStats } from '../types/index.ts';
+import { initialArticles, initialPages } from '../data/initialData.ts';
 
 const TOKEN_KEY = 'vitalora_admin_token';
 const LOCAL_ARTICLES_KEY = 'vitalora_persistent_articles';
@@ -129,6 +130,15 @@ export async function fetchArticles(params?: { category?: string; search?: strin
       saveLocalArticle(a);
     }
   });
+
+  // If both server and local storage are empty on first run, seed with initial articles
+  if (mergedMap.size === 0) {
+    initialArticles.forEach(a => {
+      if (!deletedIds.has(a.id)) {
+        mergedMap.set(a.id, a);
+      }
+    });
+  }
 
   let combined = Array.from(mergedMap.values());
 
@@ -298,15 +308,25 @@ export async function restoreDemoArticles(): Promise<{ success: boolean; totalCo
 }
 
 export async function fetchPages(): Promise<FooterPage[]> {
-  const res = await fetch('/api/pages');
-  if (!res.ok) throw new Error('Failed to fetch pages');
-  return res.json();
+  try {
+    const res = await fetch('/api/pages');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return initialPages;
 }
 
 export async function fetchPage(slug: string): Promise<FooterPage> {
-  const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`);
-  if (!res.ok) throw new Error('Page not found');
-  return res.json();
+  try {
+    const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  const found = initialPages.find(p => p.slug === slug);
+  if (found) return found;
+  throw new Error('Page not found');
 }
 
 export async function updatePage(slug: string, data: { title: string; content: string }): Promise<FooterPage> {

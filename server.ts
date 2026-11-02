@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { initialArticles, initialPages } from './server/initialData.ts';
+import { initialArticles, initialPages } from './src/data/initialData.ts';
 import { Article, FooterPage, SiteStats } from './src/types/index.ts';
 
 const __filename = fileURLToPath(import.meta.url);
