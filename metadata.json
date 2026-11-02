@@ -1,0 +1,6 @@
+{
+  "name": "Vitalora Health",
+  "description": "Vitalora Health - Your Daily Guide to Better Health. Evidence-based wellness, nutrition, fitness, and lifestyle articles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
