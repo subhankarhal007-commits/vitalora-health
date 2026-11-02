@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Article } from '../types/index.ts';
+import { AdsterraBanner } from './AdsterraBanner.tsx';
+import { AdsterraNative } from './AdsterraNative.tsx';
 import {
   Calendar,
   Clock,
@@ -332,6 +334,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           )}
         </div>
 
+        {/* Top Ad Unit (Leaderboard on Desktop, Mobile Banner on Phone) */}
+        <AdsterraBanner type="responsive-header" className="my-6" />
+
         {/* Quick Table of Contents (if multiple headings exist) */}
         {toc.length > 2 && (
           <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-5 mb-10 shadow-xs">
@@ -357,6 +362,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           className={`article-content ${fontSizeClass} bg-white rounded-3xl p-6 sm:p-10 border border-emerald-100 shadow-xs`}
           dangerouslySetInnerHTML={{ __html: article.content }}
         />
+
+        {/* Mid/Post Content Ad Unit (300x250 Rectangle) */}
+        <AdsterraBanner type="rectangle" className="my-8" />
 
         {/* Tags */}
         {article.tags && article.tags.length > 0 && (
@@ -386,6 +394,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
             The health information provided in this article is for educational purposes only. Always consult a qualified professional before starting any new dietary or physical routine.
           </p>
         </div>
+
+        {/* Adsterra Native Banner Unit (Sponsored Recommendations) */}
+        <AdsterraNative className="mt-10 mb-4" />
 
         {/* Related Articles Section */}
         {relatedArticles.length > 0 && (

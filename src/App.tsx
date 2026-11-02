@@ -8,6 +8,8 @@ import { ArticleReader } from './components/ArticleReader.tsx';
 import { PageView } from './components/PageView.tsx';
 import { AdminLogin } from './components/AdminLogin.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { AdsterraBanner } from './components/AdsterraBanner.tsx';
+import { AdsterraNative } from './components/AdsterraNative.tsx';
 import {
   Sparkles,
   Leaf,
@@ -337,6 +339,11 @@ export default function App() {
         onSearchChange={setSearchQuery}
       />
 
+      {/* Top Ad Unit (Leaderboard 728x90 on Desktop, 320x50 on Mobile) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+        <AdsterraBanner type="responsive-header" className="my-2 sm:my-3" />
+      </div>
+
       {/* Main Content Router */}
       <main className="flex-1">
         {currentView === 'article' && selectedArticle ? (
@@ -462,6 +469,11 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Homepage Mid-Section 300x250 Rectangle Ad */}
+                <div className="flex justify-center my-6">
+                  <AdsterraBanner type="rectangle" />
+                </div>
+
                 {/* 2. MAIN HEALTH ARTICLES GRID */}
                 <div className="space-y-6">
                   <div className="flex items-center justify-between border-b border-emerald-200/60 pb-4">
@@ -504,6 +516,9 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Adsterra Native Sponsored Recommendations */}
+                <AdsterraNative className="my-8" />
+
                 {/* CLINICAL STANDARDS BANNER */}
                 <section className="bg-white rounded-3xl border border-emerald-100 p-8 sm:p-10 shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
                   <div className="flex items-start gap-4">
@@ -532,6 +547,11 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Bottom Ad Unit (Leaderboard on Desktop, Mobile Banner on Mobile) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+        <AdsterraBanner type="responsive-footer" className="my-4" />
+      </div>
 
       {/* Footer on every page - completely clean without admin link */}
       <Footer onOpenPage={handleOpenPage} />
