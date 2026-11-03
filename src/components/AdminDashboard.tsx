@@ -66,6 +66,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [pages, setPages] = useState<FooterPage[]>([]);
   const [stats, setStats] = useState<SiteStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Articles Table Filter state
@@ -193,6 +195,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // POST ARTICLE & SHOW MY POST
   const handleSaveArticle = async (forcedStatus?: 'published' | 'draft') => {
+    if (isSubmitting) return;
+
     if (!articleForm.title.trim()) {
       showToast('Article title is required', 'error');
       return;
@@ -203,6 +207,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
     const statusToSave = forcedStatus || articleForm.status;
     const tagsArray = articleForm.tagsString
       .split(',')
@@ -213,16 +218,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       let savedArticle: Article;
       if (editingArticleId) {
         savedArticle = await updateArticle(editingArticleId, {
-          title: articleForm.title,
-          slug: articleForm.slug || undefined,
-          excerpt: articleForm.excerpt,
+          title: articleForm.title.trim(),
+          slug: articleForm.slug?.trim() || undefined,
+          excerpt: articleForm.excerpt?.trim(),
           category: articleForm.category,
           featuredImage: articleForm.featuredImage,
-          imageCaption: articleForm.imageCaption,
+          imageCaption: articleForm.imageCaption?.trim(),
           content: articleForm.content,
           status: statusToSave,
-          readTime: articleForm.readTime,
-          tags: tagsArray,
+          readTime: articleForm.readTime?.trim(),
+          tags: tagsArray.length > 0 ? tagsArray : [articleForm.category],
           author: articleForm.author,
         });
         showToast(
@@ -232,16 +237,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         );
       } else {
         savedArticle = await createArticle({
-          title: articleForm.title,
-          slug: articleForm.slug || undefined,
-          excerpt: articleForm.excerpt,
+          title: articleForm.title.trim(),
+          slug: articleForm.slug?.trim() || undefined,
+          excerpt: articleForm.excerpt?.trim(),
           category: articleForm.category,
           featuredImage: articleForm.featuredImage,
-          imageCaption: articleForm.imageCaption,
+          imageCaption: articleForm.imageCaption?.trim(),
           content: articleForm.content,
           status: statusToSave,
-          readTime: articleForm.readTime,
-          tags: tagsArray,
+          readTime: articleForm.readTime?.trim(),
+          tags: tagsArray.length > 0 ? tagsArray : [articleForm.category],
           author: articleForm.author,
         });
         showToast(
@@ -260,7 +265,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setActiveTab('articles');
       }
     } catch (err: any) {
-      showToast(err.message || 'Failed to save article', 'error');
+      console.error('Error saving article:', err);
+      showToast(err.message || 'Failed to save article. Please retry.', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -313,7 +321,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Image Upload handler (supports local file upload converted to data URL)
+  // Image Upload handler with client-side canvas compression (keeps phone camera photos under 150KB)
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -323,14 +331,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setIsUploadingImage(true);
     const reader = new FileReader();
+    reader.onerror = () => {
+      setIsUploadingImage(false);
+      showToast('Failed to read image file', 'error');
+    };
     reader.onload = () => {
-      const result = reader.result as string;
-      setArticleForm(prev => ({
-        ...prev,
-        featuredImage: result,
-      }));
-      showToast('Image uploaded and set as featured image!');
+      const img = new Image();
+      img.onerror = () => {
+        setIsUploadingImage(false);
+        showToast('Failed to process image', 'error');
+      };
+      img.onload = () => {
+        try {
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            setArticleForm(prev => ({ ...prev, featuredImage: reader.result as string }));
+            setIsUploadingImage(false);
+            showToast('Image uploaded!');
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+
+          setArticleForm(prev => ({
+            ...prev,
+            featuredImage: compressedDataUrl,
+          }));
+          showToast('Image uploaded and optimized for high-speed loading!');
+        } catch (canvasErr) {
+          console.warn('Canvas compression error:', canvasErr);
+          setArticleForm(prev => ({ ...prev, featuredImage: reader.result as string }));
+        } finally {
+          setIsUploadingImage(false);
+        }
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -387,21 +445,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800">
-      {/* Toast Notification */}
+      {/* Toast Notification - Mobile-Optimized Top Center */}
       {toastMessage && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold transition-all animate-in slide-in-from-bottom ${
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 px-6 py-3.5 rounded-2xl shadow-2xl text-sm font-semibold transition-all max-w-[92vw] w-auto border animate-in fade-in slide-in-from-top-4 ${
             toastMessage.type === 'error'
-              ? 'bg-red-600 text-white'
-              : 'bg-emerald-800 text-white border border-emerald-600'
+              ? 'bg-red-700 text-white border-red-800'
+              : 'bg-emerald-800 text-white border-emerald-600'
           }`}
         >
           {toastMessage.type === 'error' ? (
-            <AlertCircle className="w-5 h-5 shrink-0" />
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-200" />
           ) : (
-            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-5 h-5 text-emerald-300 shrink-0" />
           )}
-          <span>{toastMessage.text}</span>
+          <span className="leading-snug">{toastMessage.text}</span>
         </div>
       )}
 
@@ -770,29 +828,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setActiveTab('articles')}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => handleSaveArticle('draft')}
-                  className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>Save as Draft</span>
+                  {isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-700" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{isSubmitting ? 'Saving...' : 'Save as Draft'}</span>
                 </button>
 
                 {/* PUBLISH & SHOW MY POST BUTTON */}
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => handleSaveArticle('published')}
-                  className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg cursor-pointer"
+                  className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg cursor-pointer disabled:opacity-60"
                 >
-                  <Sparkles className="w-4 h-4 text-emerald-300" />
-                  <span>{editingArticleId ? 'Update & View Post' : 'Publish & View My Post'}</span>
+                  {isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-200" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 text-emerald-300" />
+                  )}
+                  <span>
+                    {isSubmitting
+                      ? 'Publishing Post...'
+                      : editingArticleId
+                      ? 'Update & View Post'
+                      : 'Publish & View My Post'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -905,12 +980,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {/* Local Upload or URL input */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <label className="flex-1 inline-flex items-center justify-center gap-2 text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 py-2 px-3 rounded-xl cursor-pointer transition-colors shadow-xs">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload File from Device</span>
+                      <label className={`flex-1 inline-flex items-center justify-center gap-2 text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 py-2 px-3 rounded-xl cursor-pointer transition-colors shadow-xs ${isUploadingImage ? 'opacity-60 pointer-events-none' : ''}`}>
+                        {isUploadingImage ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-700" />
+                        ) : (
+                          <Upload className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isUploadingImage ? 'Optimizing Image...' : 'Upload File from Device'}</span>
                         <input
                           type="file"
                           accept="image/*"
+                          disabled={isUploadingImage}
                           onChange={handleImageFileUpload}
                           className="hidden"
                         />
@@ -1016,6 +1096,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Bottom Mobile-Friendly Action Bar */}
+            <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/80 -mx-6 sm:-mx-8 -mb-6 sm:-mb-8 p-6 rounded-b-3xl">
+              <div className="text-xs text-slate-500 text-center sm:text-left">
+                <span>Status: </span>
+                <strong className={articleForm.status === 'published' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                  {articleForm.status === 'published' ? 'Will publish directly to website' : 'Will save as private draft'}
+                </strong>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setActiveTab('articles')}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleSaveArticle('draft')}
+                  className="inline-flex items-center justify-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 px-5 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-700" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{isSubmitting ? 'Saving...' : 'Save as Draft'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleSaveArticle('published')}
+                  className="inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl cursor-pointer disabled:opacity-60 flex-1 sm:flex-none"
+                >
+                  {isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-200" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 text-emerald-300" />
+                  )}
+                  <span>
+                    {isSubmitting
+                      ? 'Publishing Post...'
+                      : editingArticleId
+                      ? 'Update & View Post'
+                      : 'Publish & View My Post'}
+                  </span>
+                </button>
               </div>
             </div>
           </div>

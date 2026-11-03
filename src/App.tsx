@@ -90,7 +90,8 @@ export default function App() {
           setCurrentView('admin-login');
         }
       } else if (articleSlug) {
-        const found = articles.find(a => a.slug === articleSlug || a.id === articleSlug);
+        const decoded = decodeURIComponent(articleSlug);
+        const found = articles.find(a => a.slug === articleSlug || a.slug === decoded || a.id === articleSlug);
         if (found) {
           setSelectedArticle(found);
           setCurrentView('article');
@@ -121,7 +122,8 @@ export default function App() {
 
       if (!isExplicitAdminUrl()) {
         if (articleSlug) {
-          const target = data.find(a => a.slug === articleSlug || a.id === articleSlug);
+          const decoded = decodeURIComponent(articleSlug);
+          const target = data.find(a => a.slug === articleSlug || a.slug === decoded || a.id === articleSlug);
           if (target) {
             setSelectedArticle(target);
             setCurrentView('article');
@@ -249,6 +251,7 @@ export default function App() {
           setIsNewlyPublished(!!isJustPublished);
           setCurrentView('article');
           window.history.pushState({}, '', `/?article=${encodeURIComponent(art.slug)}`);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
           loadArticles();
         }}
         onViewLivePage={(slug) => {

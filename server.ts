@@ -97,12 +97,14 @@ function verifyAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 function slugify(text: string): string {
-  return text
+  if (!text) return 'article-' + Date.now();
+  const cleaned = text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
+  return cleaned || 'article-' + Date.now();
 }
 
 async function startServer() {
@@ -308,127 +310,149 @@ async function startServer() {
 
   // Create new article - always save permanently to database
   app.post('/api/articles', (req: Request, res: Response) => {
-    const {
-      title,
-      excerpt,
-      category,
-      featuredImage,
-      imageCaption,
-      content,
-      status = 'published',
-      tags = [],
-      readTime,
-      author
-    } = req.body;
+    try {
+      const {
+        title,
+        slug,
+        excerpt,
+        category,
+        featuredImage,
+        imageCaption,
+        content,
+        status = 'published',
+        tags = [],
+        readTime,
+        author
+      } = req.body;
 
-    if (!title || !content) {
-      res.status(400).json({ error: 'Title and content are required' });
-      return;
+      if (!title || !String(title).trim()) {
+        res.status(400).json({ error: 'Article title is required' });
+        return;
+      }
+
+      if (!content || !String(content).trim()) {
+        res.status(400).json({ error: 'Article content cannot be empty' });
+        return;
+      }
+
+      const articles = getArticles();
+      const baseSlug = slugify(slug || title);
+      let finalSlug = baseSlug;
+      let counter = 1;
+      while (articles.some(a => a.slug === finalSlug)) {
+        finalSlug = `${baseSlug}-${counter++}`;
+      }
+
+      // Calculate approximate read time if not provided
+      const words = String(content).replace(/<[^>]*>?/gm, '').split(/\s+/).filter(Boolean).length;
+      const computedReadTime = (readTime && String(readTime).trim()) || `${Math.max(1, Math.ceil(words / 150))} min read`;
+
+      const plainText = String(content).replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+      const computedExcerpt = excerpt?.trim() || (plainText.length > 150 ? plainText.slice(0, 150) + '...' : plainText) || String(title).trim();
+
+      const newArticle: Article = {
+        id: 'art-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        slug: finalSlug,
+        title: String(title).trim(),
+        excerpt: computedExcerpt,
+        category: category || 'Preventive Care',
+        featuredImage: featuredImage || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80',
+        imageCaption: imageCaption || '',
+        author: author || {
+          name: 'Vitalora Health',
+          role: 'Editorial Team',
+          avatar: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=200&q=80'
+        },
+        publishedAt: new Date().toISOString().split('T')[0],
+        readTime: computedReadTime,
+        status: status === 'draft' ? 'draft' : 'published',
+        content: String(content).trim(),
+        tags: Array.isArray(tags) ? tags : [category || 'Health'],
+        views: 0
+      };
+
+      articles.unshift(newArticle);
+      saveArticles(articles);
+
+      res.status(201).json(newArticle);
+    } catch (err: any) {
+      console.error('Server error creating article:', err);
+      res.status(500).json({ error: err.message || 'Server error creating article' });
     }
-
-    const articles = getArticles();
-    const baseSlug = slugify(title);
-    let finalSlug = baseSlug || 'article-' + Date.now();
-    let counter = 1;
-    while (articles.some(a => a.slug === finalSlug)) {
-      finalSlug = `${baseSlug}-${counter++}`;
-    }
-
-    // Calculate approximate read time if not provided
-    const words = content.replace(/<[^>]*>?/gm, '').split(/\s+/).length;
-    const computedReadTime = readTime || `${Math.max(1, Math.ceil(words / 200))} min read`;
-
-    const newArticle: Article = {
-      id: 'art-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      slug: finalSlug,
-      title: title.trim(),
-      excerpt: excerpt?.trim() || title.trim(),
-      category: category || 'Preventive Care',
-      featuredImage: featuredImage || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80',
-      imageCaption: imageCaption || '',
-      author: author || {
-        name: 'Dr. Elena Vance, MD, PhD',
-        role: 'Vitalora Clinical Editor',
-        avatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=200&q=80'
-      },
-      publishedAt: new Date().toISOString().split('T')[0],
-      readTime: computedReadTime,
-      status: status === 'draft' ? 'draft' : 'published',
-      content: content.trim(),
-      tags: Array.isArray(tags) ? tags : [category || 'Health'],
-      views: 0
-    };
-
-    articles.unshift(newArticle);
-    saveArticles(articles);
-
-    res.status(201).json(newArticle);
   });
 
   // Update existing article
   app.put('/api/articles/:id', (req: Request, res: Response) => {
-    const { id } = req.params;
-    const articles = getArticles();
-    const index = articles.findIndex(a => a.id === id);
+    try {
+      const { id } = req.params;
+      const articles = getArticles();
+      const index = articles.findIndex(a => a.id === id);
 
-    if (index === -1) {
-      res.status(404).json({ error: 'Article not found' });
-      return;
+      if (index === -1) {
+        res.status(404).json({ error: 'Article not found' });
+        return;
+      }
+
+      const existing = articles[index];
+      const {
+        title,
+        slug,
+        excerpt,
+        category,
+        featuredImage,
+        imageCaption,
+        content,
+        status,
+        tags,
+        readTime,
+        author
+      } = req.body;
+
+      let targetSlug = existing.slug;
+      if (slug && slug !== existing.slug) {
+        targetSlug = slugify(slug);
+      } else if (title && title !== existing.title && !slug) {
+        targetSlug = slugify(title);
+      }
+
+      // Ensure slug uniqueness among other articles
+      let finalSlug = targetSlug;
+      let counter = 1;
+      while (articles.some(a => a.slug === finalSlug && a.id !== id)) {
+        finalSlug = `${targetSlug}-${counter++}`;
+      }
+
+      const updatedContent = content !== undefined ? String(content) : existing.content;
+      const words = updatedContent.replace(/<[^>]*>?/gm, '').split(/\s+/).filter(Boolean).length;
+      const computedReadTime = (readTime && String(readTime).trim()) || existing.readTime || `${Math.max(1, Math.ceil(words / 150))} min read`;
+
+      const plainText = updatedContent.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+      const computedExcerpt = excerpt !== undefined ? (excerpt?.trim() || plainText.slice(0, 150)) : existing.excerpt;
+
+      const updated: Article = {
+        ...existing,
+        title: title !== undefined ? String(title).trim() : existing.title,
+        slug: finalSlug,
+        excerpt: computedExcerpt,
+        category: category !== undefined ? category : existing.category,
+        featuredImage: featuredImage !== undefined ? featuredImage : existing.featuredImage,
+        imageCaption: imageCaption !== undefined ? imageCaption : existing.imageCaption,
+        content: updatedContent,
+        status: status !== undefined ? status : existing.status,
+        tags: tags !== undefined ? tags : existing.tags,
+        readTime: computedReadTime,
+        author: author !== undefined ? author : existing.author,
+        updatedAt: new Date().toISOString().split('T')[0]
+      };
+
+      articles[index] = updated;
+      saveArticles(articles);
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error('Server error updating article:', err);
+      res.status(500).json({ error: err.message || 'Server error updating article' });
     }
-
-    const existing = articles[index];
-    const {
-      title,
-      slug,
-      excerpt,
-      category,
-      featuredImage,
-      imageCaption,
-      content,
-      status,
-      tags,
-      readTime,
-      author
-    } = req.body;
-
-    let targetSlug = existing.slug;
-    if (slug && slug !== existing.slug) {
-      targetSlug = slugify(slug);
-    } else if (title && title !== existing.title && !slug) {
-      targetSlug = slugify(title);
-    }
-
-    // Ensure slug uniqueness among other articles
-    let finalSlug = targetSlug;
-    let counter = 1;
-    while (articles.some(a => a.slug === finalSlug && a.id !== id)) {
-      finalSlug = `${targetSlug}-${counter++}`;
-    }
-
-    const updatedContent = content !== undefined ? content : existing.content;
-    const words = updatedContent.replace(/<[^>]*>?/gm, '').split(/\s+/).length;
-    const computedReadTime = readTime || `${Math.max(1, Math.ceil(words / 200))} min read`;
-
-    const updated: Article = {
-      ...existing,
-      title: title !== undefined ? title.trim() : existing.title,
-      slug: finalSlug,
-      excerpt: excerpt !== undefined ? excerpt.trim() : existing.excerpt,
-      category: category !== undefined ? category : existing.category,
-      featuredImage: featuredImage !== undefined ? featuredImage : existing.featuredImage,
-      imageCaption: imageCaption !== undefined ? imageCaption : existing.imageCaption,
-      content: updatedContent,
-      status: status !== undefined ? status : existing.status,
-      tags: tags !== undefined ? tags : existing.tags,
-      readTime: computedReadTime,
-      author: author !== undefined ? author : existing.author,
-      updatedAt: new Date().toISOString().split('T')[0]
-    };
-
-    articles[index] = updated;
-    saveArticles(articles);
-
-    res.json(updated);
   });
 
   // Delete article (Manual removal)

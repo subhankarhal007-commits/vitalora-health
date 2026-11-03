@@ -38,6 +38,18 @@ function getDeletedIds(): Set<string> {
   }
 }
 
+export function slugify(text: string): string {
+  if (!text) return 'post-' + Date.now();
+  const cleaned = text
+    .toString()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '') // Retain all international letters (Bengali, Hindi, etc.) and numbers
+    .trim()
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'post-' + Date.now();
+}
+
 function markIdAsDeleted(id: string) {
   try {
     const set = getDeletedIds();
@@ -76,7 +88,20 @@ function saveLocalArticle(article: Article) {
     const existing = getLocalArticles().filter(a => a.id !== article.id);
     localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify([article, ...existing]));
   } catch (err) {
-    console.warn('Failed to save to localStorage:', err);
+    console.warn('Failed to save to localStorage, attempting quota-safe fallback:', err);
+    try {
+      // If quota exceeded due to large embedded data URL, store with a lightweight placeholder image
+      const safeArticle: Article = {
+        ...article,
+        featuredImage: article.featuredImage?.startsWith('data:')
+          ? 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80'
+          : article.featuredImage
+      };
+      const existing = getLocalArticles().filter(a => a.id !== article.id);
+      localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify([safeArticle, ...existing]));
+    } catch (fallbackErr) {
+      console.error('Critical localStorage quota error:', fallbackErr);
+    }
   }
 }
 
@@ -231,14 +256,17 @@ export async function createArticle(data: Partial<Article>): Promise<Article> {
     if (res.ok) {
       createdArticle = await res.json();
     } else {
-      throw new Error('Server create failed');
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server responded with status ${res.status}`);
     }
-  } catch (err) {
+  } catch (err: any) {
+    console.warn('Server create article failed, saving to local persistent storage:', err);
+    const chosenSlug = slugify(data.slug || data.title || 'post');
     createdArticle = {
       id: 'art-' + Date.now(),
-      slug: (data.title || 'article').toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/[\s_-]+/g, '-'),
-      title: data.title || 'Untitled Article',
-      excerpt: data.excerpt || data.title || '',
+      slug: chosenSlug,
+      title: (data.title || 'Untitled Article').trim(),
+      excerpt: (data.excerpt || data.title || '').trim(),
       category: data.category || 'Nutrition',
       featuredImage: data.featuredImage || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80',
       imageCaption: data.imageCaption || '',
@@ -273,14 +301,18 @@ export async function updateArticle(id: string, data: Partial<Article>): Promise
     if (res.ok) {
       updatedArticle = await res.json();
     } else {
-      throw new Error('Server update failed');
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server responded with status ${res.status}`);
     }
-  } catch {
+  } catch (err: any) {
+    console.warn('Server update failed, updating local copy:', err);
     const existing = getLocalArticles().find(a => a.id === id);
+    const newSlug = data.slug ? slugify(data.slug) : (data.title ? slugify(data.title) : existing?.slug);
     updatedArticle = {
       ...(existing || ({} as any)),
       ...data,
       id,
+      slug: newSlug || id,
     } as Article;
   }
 
