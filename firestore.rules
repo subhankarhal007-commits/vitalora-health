@@ -1,0 +1,235 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // 1. GLOBAL SAFETY NET (DEFAULT DENY)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 2. REUSABLE HARDENED PRIMITIVES
+    // =========================================================================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isPrimaryAdmin() {
+      return isVerified() && request.auth.token.email == 'subhankarhal007@gmail.com';
+    }
+
+    function isAdmin() {
+      return isPrimaryAdmin() || (isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // =========================================================================
+    // 3. ENTITY VALIDATION BLUEPRINTS
+    // =========================================================================
+    function isValidAuthorMap(author) {
+      return author is map
+        && author.keys().hasAll(['name', 'role', 'avatar'])
+        && author.keys().hasOnly(['name', 'role', 'avatar'])
+        && author.name is string && author.name.size() >= 1 && author.name.size() <= 120
+        && author.role is string && author.role.size() >= 1 && author.role.size() <= 120
+        && author.avatar is string && author.avatar.size() <= 2000;
+    }
+
+    function isValidTagsList(tags) {
+      return tags is list
+        && tags.size() <= 15
+        && (tags.size() == 0 || (tags[0] is string && tags[0].size() >= 1 && tags[0].size() <= 60));
+    }
+
+    function isValidArticle(data) {
+      return data.keys().hasAll([
+          'id', 'slug', 'title', 'excerpt', 'category',
+          'featuredImage', 'imageCaption', 'author',
+          'publishedAt', 'readTime', 'status', 'content',
+          'tags', 'views', 'authorUid', 'createdAt', 'updatedAtTimestamp'
+        ])
+        && data.keys().hasOnly([
+          'id', 'slug', 'title', 'excerpt', 'category',
+          'featuredImage', 'imageCaption', 'author',
+          'publishedAt', 'updatedAt', 'readTime', 'status', 'content',
+          'tags', 'views', 'authorUid', 'createdAt', 'updatedAtTimestamp'
+        ])
+        && isValidId(data.id)
+        && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 200
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 300
+        && data.excerpt is string && data.excerpt.size() <= 1000
+        && data.category is string && data.category.size() <= 64
+        && data.category in [
+          'Nutrition', 'Mental Wellness', 'Fitness & Movement',
+          'Sleep & Recovery', 'Preventive Care', 'Longevity'
+        ]
+        && data.featuredImage is string && data.featuredImage.size() <= 400000
+        && data.imageCaption is string && data.imageCaption.size() <= 500
+        && isValidAuthorMap(data.author)
+        && data.publishedAt is string && data.publishedAt.size() >= 1 && data.publishedAt.size() <= 40
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 40))
+        && data.readTime is string && data.readTime.size() >= 1 && data.readTime.size() <= 40
+        && data.status is string && data.status.size() <= 20 && data.status in ['published', 'draft']
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 350000
+        && isValidTagsList(data.tags)
+        && data.views is int && data.views >= 0
+        && isValidId(data.authorUid)
+        && data.createdAt is timestamp
+        && data.updatedAtTimestamp is timestamp;
+    }
+
+    function isValidFooterPage(data) {
+      return data.keys().hasAll(['slug', 'title', 'lastUpdated', 'content', 'updatedAtTimestamp'])
+        && data.keys().hasOnly(['slug', 'title', 'lastUpdated', 'content', 'updatedAtTimestamp'])
+        && data.slug is string && data.slug.size() <= 64
+        && data.slug in [
+          'about-us', 'contact-us', 'privacy-policy',
+          'terms-and-conditions', 'medical-disclaimer', 'affiliate-disclosure'
+        ]
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.lastUpdated is string && data.lastUpdated.size() >= 1 && data.lastUpdated.size() <= 40
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 150000
+        && data.updatedAtTimestamp is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'role', 'createdAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 256
+        && data.role is string && data.role.size() <= 20 && data.role == 'admin'
+        && data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // 4. ARTICLES COLLECTION (/articles/{articleId})
+    // =========================================================================
+    match /articles/{articleId} {
+      // Single-doc read: Public can read published articles; verified admins can read all
+      allow get: if isValidId(articleId)
+        && (resource.data.status == 'published' || isAdmin());
+
+      // Secure list query: Enforces status == 'published' for public visitors; primary admin can list all
+      allow list: if resource.data.status == 'published' || isPrimaryAdmin();
+
+      // Create: Auth -> Static Validation -> Relational Role Check
+      allow create: if isVerified()
+        && isValidId(articleId)
+        && isValidArticle(incoming())
+        && incoming().id == articleId
+        && incoming().authorUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAtTimestamp == request.time
+        && isAdmin();
+
+      // Action-Based Update: Always starts with isValidArticle(incoming())
+      allow update: if isValidId(articleId)
+        && isValidArticle(incoming())
+        && incoming().id == existing().id
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action 1: Admin editorial update
+          (
+            isVerified()
+            && incoming().updatedAtTimestamp == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'slug', 'title', 'excerpt', 'category', 'featuredImage',
+              'imageCaption', 'author', 'publishedAt', 'updatedAt',
+              'readTime', 'status', 'content', 'tags', 'views', 'updatedAtTimestamp'
+            ])
+            && isAdmin()
+          )
+          ||
+          // Action 2: Public reader view increment (+1 only on published articles)
+          (
+            existing().status == 'published'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['views'])
+            && incoming().views == existing().views + 1
+          )
+        );
+
+      // Delete: Verified admin only
+      allow delete: if isVerified() && isValidId(articleId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 5. FOOTER PAGES COLLECTION (/pages/{pageSlug})
+    // =========================================================================
+    match /pages/{pageSlug} {
+      allow get: if isValidId(pageSlug);
+
+      allow list: if resource.data.slug in [
+        'about-us', 'contact-us', 'privacy-policy',
+        'terms-and-conditions', 'medical-disclaimer', 'affiliate-disclosure'
+      ];
+
+      allow create: if isVerified()
+        && isValidId(pageSlug)
+        && isValidFooterPage(incoming())
+        && incoming().slug == pageSlug
+        && incoming().updatedAtTimestamp == request.time
+        && isAdmin();
+
+      allow update: if isVerified()
+        && isValidId(pageSlug)
+        && isValidFooterPage(incoming())
+        && incoming().slug == existing().slug
+        && incoming().updatedAtTimestamp == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'lastUpdated', 'content', 'updatedAtTimestamp'
+        ])
+        && isAdmin();
+
+      allow delete: if isVerified() && isValidId(pageSlug) && isAdmin();
+    }
+
+    // =========================================================================
+    // 6. ADMINS COLLECTION (/admins/{userId}) - PII & RBAC ISOLATED
+    // =========================================================================
+    match /admins/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (isOwner(userId) || isPrimaryAdmin());
+
+      allow list: if isPrimaryAdmin();
+
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isValidAdminUser(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && isPrimaryAdmin();
+
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isValidAdminUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'role'])
+        && isPrimaryAdmin();
+
+      allow delete: if isVerified() && isValidId(userId) && isPrimaryAdmin();
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "Article": {
+      "title": "Article",
+      "description": "A health and wellness editorial article published or drafted on Vitalora Health.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the article document",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL-friendly slug supporting Unicode/Bengali and Latin characters",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "title": {
+          "type": "string",
+          "description": "Article headline",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "excerpt": {
+          "type": "string",
+          "description": "Short summary shown on article cards",
+          "maxLength": 1000
+        },
+        "category": {
+          "type": "string",
+          "description": "Primary health category",
+          "enum": [
+            "Nutrition",
+            "Mental Wellness",
+            "Fitness & Movement",
+            "Sleep & Recovery",
+            "Preventive Care",
+            "Longevity"
+          ],
+          "maxLength": 64
+        },
+        "featuredImage": {
+          "type": "string",
+          "description": "Featured image URL or compressed JPEG data URL",
+          "maxLength": 400000
+        },
+        "imageCaption": {
+          "type": "string",
+          "description": "Optional caption or credit for the featured image",
+          "maxLength": 500
+        },
+        "author": {
+          "type": "object",
+          "description": "Article author attribution map (name, role, avatar)"
+        },
+        "publishedAt": {
+          "type": "string",
+          "description": "Display publication date string (YYYY-MM-DD)",
+          "maxLength": 40
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Display last-updated date string (YYYY-MM-DD)",
+          "maxLength": 40
+        },
+        "readTime": {
+          "type": "string",
+          "description": "Estimated reading time label",
+          "maxLength": 40
+        },
+        "status": {
+          "type": "string",
+          "description": "Publication visibility state",
+          "enum": ["published", "draft"],
+          "maxLength": 20
+        },
+        "content": {
+          "type": "string",
+          "description": "Article body HTML content",
+          "minLength": 1,
+          "maxLength": 350000
+        },
+        "tags": {
+          "type": "array",
+          "description": "Bounded list of up to 15 topic tags"
+        },
+        "views": {
+          "type": "number",
+          "description": "Genuine cumulative reader view count"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "UID of the admin who created the article",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp"
+        },
+        "updatedAtTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest editorial update"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "excerpt",
+        "category",
+        "featuredImage",
+        "imageCaption",
+        "author",
+        "publishedAt",
+        "readTime",
+        "status",
+        "content",
+        "tags",
+        "views",
+        "authorUid",
+        "createdAt",
+        "updatedAtTimestamp"
+      ]
+    },
+    "FooterPage": {
+      "title": "FooterPage",
+      "description": "Editable static site and legal policy page (About, Contact, Privacy, Terms, Medical Disclaimer, Affiliate Disclosure).",
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "Fixed page slug identifier",
+          "enum": [
+            "about-us",
+            "contact-us",
+            "privacy-policy",
+            "terms-and-conditions",
+            "medical-disclaimer",
+            "affiliate-disclosure"
+          ],
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Page title",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "Human-readable last updated date string",
+          "maxLength": 40
+        },
+        "content": {
+          "type": "string",
+          "description": "Page HTML content",
+          "minLength": 1,
+          "maxLength": 150000
+        },
+        "updatedAtTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "lastUpdated",
+        "content",
+        "updatedAtTimestamp"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized site administrator record (PII restricted to owner or primary admin).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified administrator email address",
+          "maxLength": 256
+        },
+        "role": {
+          "type": "string",
+          "description": "RBAC role identifier",
+          "enum": ["admin"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp"
+        }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/articles/{articleId}": {
+      "schema": {
+        "$ref": "#/entities/Article"
+      },
+      "description": "Stores all published and draft Vitalora Health articles."
+    },
+    "/pages/{pageSlug}": {
+      "schema": {
+        "$ref": "#/entities/FooterPage"
+      },
+      "description": "Stores editable site policy and informational pages."
+    },
+    "/admins/{userId}": {
+      "schema": {
+        "$ref": "#/entities/AdminUser"
+      },
+      "description": "Stores authorized administrator UIDs for role-based access control."
+    }
+  }
+}

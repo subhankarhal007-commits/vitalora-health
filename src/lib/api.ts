@@ -1,439 +1,635 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp,
+  increment,
+  Timestamp,
+} from 'firebase/firestore';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { Article, FooterPage, SiteStats } from '../types/index.ts';
 import { initialArticles, initialPages } from '../data/initialData.ts';
+import {
+  db,
+  auth,
+  googleProvider,
+  OperationType,
+  handleFirestoreError,
+  isAuthorizedAdminUser,
+  PRIMARY_ADMIN_EMAIL,
+} from '../firebase.ts';
 
-const TOKEN_KEY = 'vitalora_admin_token';
-const LOCAL_ARTICLES_KEY = 'vitalora_persistent_articles';
-const DELETED_IDS_KEY = 'vitalora_deleted_ids';
+const VALID_CATEGORIES = [
+  'Nutrition',
+  'Mental Wellness',
+  'Fitness & Movement',
+  'Sleep & Recovery',
+  'Preventive Care',
+  'Longevity',
+] as const;
 
-export function getAdminToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
+const VALID_PAGE_SLUGS: FooterPage['slug'][] = [
+  'about-us',
+  'contact-us',
+  'privacy-policy',
+  'terms-and-conditions',
+  'medical-disclaimer',
+  'affiliate-disclosure',
+];
 
-export function setAdminToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function removeAdminToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getAdminToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-// Track permanently deleted article IDs so they NEVER reappear automatically
-function getDeletedIds(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DELETED_IDS_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch {
-    return new Set();
-  }
-}
+const DEFAULT_FEATURED_IMAGE =
+  'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80';
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=200&q=80';
 
 export function slugify(text: string): string {
   if (!text) return 'post-' + Date.now();
   const cleaned = text
     .toString()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, '') // Retain all international letters (Bengali, Hindi, etc.) and numbers
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 180);
   return cleaned || 'post-' + Date.now();
 }
 
-function markIdAsDeleted(id: string) {
-  try {
-    const set = getDeletedIds();
-    set.add(id);
-    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
-  } catch (err) {
-    console.warn('Failed to save deleted ID:', err);
-  }
+function sanitizeId(raw: string): string {
+  const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
+  return cleaned || `art-${Date.now()}`;
 }
 
-function unmarkIdAsDeleted(id: string) {
-  try {
-    const set = getDeletedIds();
-    set.delete(id);
-    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
-  } catch (err) {
-    console.warn('Failed to unmark deleted ID:', err);
+function normalizeCategory(cat?: string): Article['category'] {
+  if (cat && (VALID_CATEGORIES as readonly string[]).includes(cat)) {
+    return cat as Article['category'];
   }
+  return 'Preventive Care';
 }
 
-function getLocalArticles(): Article[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_ARTICLES_KEY);
-    const list: Article[] = raw ? JSON.parse(raw) : [];
-    const deleted = getDeletedIds();
-    return list.filter(a => !deleted.has(a.id));
-  } catch {
-    return [];
+function sanitizeTags(tags?: string[], fallbackCategory?: string): string[] {
+  const list = Array.isArray(tags) ? tags : [];
+  const cleaned = list
+    .map((t) => String(t).trim().slice(0, 60))
+    .filter((t) => t.length > 0)
+    .slice(0, 15);
+  if (cleaned.length === 0 && fallbackCategory) {
+    return [fallbackCategory.slice(0, 60)];
   }
+  return cleaned;
 }
 
-function saveLocalArticle(article: Article) {
-  try {
-    const deleted = getDeletedIds();
-    if (deleted.has(article.id)) return;
-    const existing = getLocalArticles().filter(a => a.id !== article.id);
-    localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify([article, ...existing]));
-  } catch (err) {
-    console.warn('Failed to save to localStorage, attempting quota-safe fallback:', err);
-    try {
-      // If quota exceeded due to large embedded data URL, store with a lightweight placeholder image
-      const safeArticle: Article = {
-        ...article,
-        featuredImage: article.featuredImage?.startsWith('data:')
-          ? 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80'
-          : article.featuredImage
-      };
-      const existing = getLocalArticles().filter(a => a.id !== article.id);
-      localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify([safeArticle, ...existing]));
-    } catch (fallbackErr) {
-      console.error('Critical localStorage quota error:', fallbackErr);
-    }
-  }
+function sanitizeAuthor(author?: Partial<Article['author']>): Article['author'] {
+  return {
+    name: (author?.name?.trim() || 'Vitalora Health').slice(0, 120),
+    role: (author?.role?.trim() || 'Editorial Team').slice(0, 120),
+    avatar: (author?.avatar?.trim() || DEFAULT_AVATAR).slice(0, 2000),
+  };
 }
 
-function removeLocalArticle(id: string) {
-  try {
-    markIdAsDeleted(id);
-    const existing = getLocalArticles().filter(a => a.id !== id);
-    localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify(existing));
-  } catch (err) {
-    console.warn('Failed to remove from localStorage:', err);
-  }
+function docToArticle(data: Record<string, any>): Article {
+  return {
+    id: String(data.id || ''),
+    slug: String(data.slug || ''),
+    title: String(data.title || 'Untitled Article'),
+    excerpt: String(data.excerpt || ''),
+    category: normalizeCategory(data.category),
+    featuredImage: String(data.featuredImage || DEFAULT_FEATURED_IMAGE),
+    imageCaption: String(data.imageCaption || ''),
+    author: sanitizeAuthor(data.author),
+    publishedAt: String(data.publishedAt || new Date().toISOString().split('T')[0]),
+    updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+    readTime: String(data.readTime || '5 min read'),
+    status: data.status === 'draft' ? 'draft' : 'published',
+    content: String(data.content || ''),
+    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
+    views: typeof data.views === 'number' && Number.isFinite(data.views) ? Math.max(0, Math.floor(data.views)) : 0,
+  };
 }
 
-export async function fetchArticles(params?: { category?: string; search?: string; status?: string; all?: boolean }): Promise<Article[]> {
-  const query = new URLSearchParams();
-  if (params?.category && params.category !== 'All') query.set('category', params.category);
-  if (params?.search) query.set('search', params.search);
-  if (params?.status) query.set('status', params.status);
-  if (params?.all) query.set('all', 'true');
-
-  const deletedIds = getDeletedIds();
-  let serverArticles: Article[] = [];
-
-  try {
-    const res = await fetch(`/api/articles?${query.toString()}`, {
-      headers: authHeaders(),
-    });
-    if (res.ok) {
-      serverArticles = await res.json();
-    }
-  } catch (err) {
-    console.warn('Server fetch error, falling back to local storage:', err);
+function getSortTimestamp(docData: Record<string, any>): number {
+  const created = docData.createdAt;
+  if (created instanceof Timestamp) {
+    return created.toMillis();
   }
-
-  // Filter out any IDs that the user has explicitly removed
-  serverArticles = serverArticles.filter(a => !deletedIds.has(a.id));
-
-  // Merge with client-side local custom articles (which are also filtered for deleted IDs)
-  const localArticles = getLocalArticles();
-  const mergedMap = new Map<string, Article>();
-
-  localArticles.forEach(a => {
-    if (!deletedIds.has(a.id)) {
-      mergedMap.set(a.id, a);
-    }
-  });
-
-  serverArticles.forEach(a => {
-    if (!deletedIds.has(a.id)) {
-      mergedMap.set(a.id, a);
-      saveLocalArticle(a);
-    }
-  });
-
-  // If both server and local storage are empty on first run, seed with initial articles
-  if (mergedMap.size === 0) {
-    initialArticles.forEach(a => {
-      if (!deletedIds.has(a.id)) {
-        mergedMap.set(a.id, a);
-      }
-    });
+  if (created && typeof created.seconds === 'number') {
+    return created.seconds * 1000;
   }
+  const parsed = Date.parse(docData.publishedAt || '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
 
-  let combined = Array.from(mergedMap.values());
+// Legacy token helpers kept as no-ops for backwards compatibility with components
+export function getAdminToken(): string | null {
+  return auth.currentUser ? auth.currentUser.uid : null;
+}
 
-  if (params?.status) {
-    combined = combined.filter(a => a.status === params.status);
-  }
-  if (params?.category && params.category !== 'All') {
-    combined = combined.filter(a => a.category.toLowerCase() === params.category!.toLowerCase());
-  }
-  if (params?.search) {
-    const q = params.search.toLowerCase();
-    combined = combined.filter(a =>
-      a.title.toLowerCase().includes(q) ||
-      a.excerpt.toLowerCase().includes(q) ||
-      a.category.toLowerCase().includes(q) ||
-      (a.tags && a.tags.some(t => t.toLowerCase().includes(q)))
+export function setAdminToken(_token: string) {
+  // Handled automatically by Firebase Auth persistence
+}
+
+export function removeAdminToken() {
+  signOut(auth).catch(() => {});
+}
+
+// --- AUTHENTICATION (Firebase Google Auth) ---
+export async function loginAdminWithGoogle(): Promise<{
+  uid: string;
+  email: string;
+  displayName: string;
+}> {
+  const result = await signInWithPopup(auth, googleProvider);
+  const user = result.user;
+  const authorized = await isAuthorizedAdminUser(user);
+
+  if (!authorized) {
+    await signOut(auth);
+    throw new Error(
+      `Access Denied: "${user.email || 'Unknown account'}" is not authorized. Please sign in with the site administrator Google account (${PRIMARY_ADMIN_EMAIL}).`
     );
   }
 
-  // Sort newest first
-  combined.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  return {
+    uid: user.uid,
+    email: user.email || '',
+    displayName: user.displayName || 'Vitalora Admin',
+  };
+}
+
+export async function logoutAdmin(): Promise<void> {
+  await signOut(auth);
+}
+
+export async function verifyAdminSession(): Promise<boolean> {
+  return isAuthorizedAdminUser(auth.currentUser);
+}
+
+export function subscribeToAdminAuth(
+  callback: (isAdmin: boolean, user: User | null) => void
+): () => void {
+  return onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      callback(false, null);
+      return;
+    }
+    const authorized = await isAuthorizedAdminUser(user);
+    callback(authorized, user);
+  });
+}
+
+// --- ARTICLES (Firestore) ---
+export async function fetchArticles(params?: {
+  category?: string;
+  search?: string;
+  status?: string;
+  all?: boolean;
+}): Promise<Article[]> {
+  const colPath = 'articles';
+  let rows: Array<{ article: Article; sortTs: number }> = [];
+
+  try {
+    const canFetchAll = params?.all && (await isAuthorizedAdminUser(auth.currentUser));
+    const q = canFetchAll
+      ? collection(db, colPath)
+      : query(collection(db, colPath), where('status', '==', 'published'));
+
+    const snap = await getDocs(q);
+    rows = snap.docs.map((d) => {
+      const raw = d.data();
+      return {
+        article: docToArticle({ ...raw, id: raw.id || d.id }),
+        sortTs: getSortTimestamp(raw),
+      };
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, colPath);
+  }
+
+  rows.sort((a, b) => b.sortTs - a.sortTs);
+  let combined = rows.map((r) => r.article);
+
+  if (params?.status) {
+    combined = combined.filter((a) => a.status === params.status);
+  }
+  if (params?.category && params.category !== 'All') {
+    combined = combined.filter(
+      (a) => a.category.toLowerCase() === params.category!.toLowerCase()
+    );
+  }
+  if (params?.search) {
+    const qStr = params.search.toLowerCase();
+    combined = combined.filter(
+      (a) =>
+        a.title.toLowerCase().includes(qStr) ||
+        a.excerpt.toLowerCase().includes(qStr) ||
+        a.category.toLowerCase().includes(qStr) ||
+        (a.tags && a.tags.some((t) => t.toLowerCase().includes(qStr)))
+    );
+  }
 
   return combined;
 }
 
 export async function fetchArticleBySlug(slugOrId: string): Promise<Article> {
-  const deletedIds = getDeletedIds();
-  if (deletedIds.has(slugOrId)) {
-    throw new Error('Article has been removed');
+  const decoded = decodeURIComponent(slugOrId);
+  const colPath = 'articles';
+
+  // 1. Try direct ID lookup if it matches valid ID regex
+  if (/^[a-zA-Z0-9_-]{1,128}$/.test(decoded)) {
+    try {
+      const snap = await getDoc(doc(db, colPath, decoded));
+      if (snap.exists()) {
+        return docToArticle({ ...snap.data(), id: snap.id });
+      }
+    } catch {
+      // Fall through to slug query
+    }
   }
 
+  // 2. Query by slug
   try {
-    const res = await fetch(`/api/articles/${encodeURIComponent(slugOrId)}`, {
-      headers: authHeaders(),
-    });
-    if (res.ok) {
-      const art = await res.json();
-      if (!deletedIds.has(art.id)) {
-        saveLocalArticle(art);
-        return art;
-      }
+    const isAdmin = await isAuthorizedAdminUser(auth.currentUser);
+    const q = isAdmin
+      ? query(collection(db, colPath), where('slug', '==', decoded))
+      : query(
+          collection(db, colPath),
+          where('status', '==', 'published'),
+          where('slug', '==', decoded)
+        );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const first = snap.docs[0];
+      return docToArticle({ ...first.data(), id: first.id });
     }
-  } catch {}
-
-  const local = getLocalArticles().find(a => (a.slug === slugOrId || a.id === slugOrId) && !deletedIds.has(a.id));
-  if (local) return local;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `${colPath}/${decoded}`);
+  }
 
   throw new Error('Article not found');
 }
 
-export async function recordArticleView(slugOrId: string): Promise<number> {
+export async function recordArticleView(articleId: string): Promise<number> {
+  if (!articleId || !/^[a-zA-Z0-9_-]{1,128}$/.test(articleId)) return 0;
+  const docPath = `articles/${articleId}`;
   try {
-    const res = await fetch(`/api/articles/${encodeURIComponent(slugOrId)}/view`, {
-      method: 'POST',
-      headers: authHeaders(),
+    const ref = doc(db, 'articles', articleId);
+    await updateDoc(ref, {
+      views: increment(1),
     });
-    if (res.ok) {
-      const data = await res.json();
-      const local = getLocalArticles();
-      const idx = local.findIndex(a => a.id === slugOrId || a.slug === slugOrId);
-      if (idx !== -1) {
-        local[idx].views = data.views;
-        localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify(local));
-      }
-      return data.views;
-    }
-  } catch (err) {
-    console.warn('Failed to record view on server:', err);
+    const updated = await getDoc(ref);
+    return updated.exists() ? Number(updated.data()?.views || 1) : 1;
+  } catch (error) {
+    // Do not crash reader view if an offline/ad-blocked visitor fails to increment
+    console.warn('Could not record view in Firestore:', docPath, error);
+    return 0;
   }
-
-  const local = getLocalArticles();
-  const idx = local.findIndex(a => a.id === slugOrId || a.slug === slugOrId);
-  if (idx !== -1) {
-    local[idx].views = (local[idx].views || 0) + 1;
-    localStorage.setItem(LOCAL_ARTICLES_KEY, JSON.stringify(local));
-    return local[idx].views;
-  }
-  return 1;
 }
 
 export async function createArticle(data: Partial<Article>): Promise<Article> {
-  let createdArticle: Article;
-
-  try {
-    const res = await fetch('/api/articles', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      createdArticle = await res.json();
-    } else {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server responded with status ${res.status}`);
-    }
-  } catch (err: any) {
-    console.warn('Server create article failed, saving to local persistent storage:', err);
-    const chosenSlug = slugify(data.slug || data.title || 'post');
-    createdArticle = {
-      id: 'art-' + Date.now(),
-      slug: chosenSlug,
-      title: (data.title || 'Untitled Article').trim(),
-      excerpt: (data.excerpt || data.title || '').trim(),
-      category: data.category || 'Nutrition',
-      featuredImage: data.featuredImage || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80',
-      imageCaption: data.imageCaption || '',
-      author: {
-        name: data.author?.name || 'Vitalora Health',
-        role: 'Editorial Team',
-        avatar: data.author?.avatar || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=200&q=80'
-      },
-      publishedAt: new Date().toISOString().split('T')[0],
-      readTime: data.readTime || '5 min read',
-      status: data.status || 'published',
-      content: data.content || '',
-      tags: data.tags || ['Health'],
-      views: 0
-    };
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Please sign in with your authorized Admin Google account first.');
   }
 
-  // Ensure this ID is not in deletedIds
-  unmarkIdAsDeleted(createdArticle.id);
-  saveLocalArticle(createdArticle);
-  return createdArticle;
+  const title = (data.title || '').trim().slice(0, 300);
+  const content = (data.content || '').trim().slice(0, 350000);
+  if (!title) throw new Error('Article title is required');
+  if (!content) throw new Error('Article content cannot be empty');
+
+  const id = sanitizeId(`art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  const baseSlug = slugify(data.slug?.trim() || title);
+  const finalSlug = `${baseSlug.slice(0, 185)}-${id.slice(-5)}`;
+  const category = normalizeCategory(data.category);
+  const plainText = content
+    .replace(/<[^>]*>?/gm, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const excerpt = (
+    data.excerpt?.trim() ||
+    (plainText.length > 160 ? `${plainText.slice(0, 160)}...` : plainText) ||
+    title
+  ).slice(0, 1000);
+
+  const words = plainText.split(/\s+/).filter(Boolean).length;
+  const readTime = (data.readTime?.trim() || `${Math.max(1, Math.ceil(words / 150))} min read`).slice(0, 40);
+  const featuredImage = (data.featuredImage?.trim() || DEFAULT_FEATURED_IMAGE).slice(0, 400000);
+  const imageCaption = (data.imageCaption?.trim() || '').slice(0, 500);
+  const publishedAt = new Date().toISOString().split('T')[0];
+  const status: 'published' | 'draft' = data.status === 'draft' ? 'draft' : 'published';
+  const tags = sanitizeTags(data.tags, category);
+  const author = sanitizeAuthor(data.author);
+
+  const payload = {
+    id,
+    slug: finalSlug.slice(0, 200),
+    title,
+    excerpt,
+    category,
+    featuredImage,
+    imageCaption,
+    author,
+    publishedAt,
+    readTime,
+    status,
+    content,
+    tags,
+    views: 0,
+    authorUid: user.uid,
+    createdAt: serverTimestamp(),
+    updatedAtTimestamp: serverTimestamp(),
+  };
+
+  const docPath = `articles/${id}`;
+  try {
+    await setDoc(doc(db, 'articles', id), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, docPath);
+  }
+
+  return docToArticle(payload);
 }
 
 export async function updateArticle(id: string, data: Partial<Article>): Promise<Article> {
-  let updatedArticle: Article;
-  try {
-    const res = await fetch(`/api/articles/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      updatedArticle = await res.json();
-    } else {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || `Server responded with status ${res.status}`);
-    }
-  } catch (err: any) {
-    console.warn('Server update failed, updating local copy:', err);
-    const existing = getLocalArticles().find(a => a.id === id);
-    const newSlug = data.slug ? slugify(data.slug) : (data.title ? slugify(data.title) : existing?.slug);
-    updatedArticle = {
-      ...(existing || ({} as any)),
-      ...data,
-      id,
-      slug: newSlug || id,
-    } as Article;
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Please sign in with your authorized Admin Google account first.');
   }
 
-  unmarkIdAsDeleted(id);
-  saveLocalArticle(updatedArticle);
-  return updatedArticle;
+  const safeId = sanitizeId(id);
+  const docPath = `articles/${safeId}`;
+  const ref = doc(db, 'articles', safeId);
+
+  let existingData: Record<string, any>;
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      throw new Error('Article not found in database');
+    }
+    existingData = snap.data();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, docPath);
+  }
+
+  const updates: Record<string, any> = {
+    updatedAt: new Date().toISOString().split('T')[0],
+    updatedAtTimestamp: serverTimestamp(),
+  };
+
+  if (data.title !== undefined) {
+    const trimmed = data.title.trim().slice(0, 300);
+    if (!trimmed) throw new Error('Article title is required');
+    updates.title = trimmed;
+  }
+  if (data.slug !== undefined && data.slug.trim()) {
+    updates.slug = slugify(data.slug.trim()).slice(0, 200);
+  }
+  if (data.content !== undefined) {
+    const trimmedContent = data.content.trim().slice(0, 350000);
+    if (!trimmedContent) throw new Error('Article content cannot be empty');
+    updates.content = trimmedContent;
+  }
+  if (data.excerpt !== undefined) {
+    updates.excerpt = data.excerpt.trim().slice(0, 1000);
+  }
+  if (data.category !== undefined) {
+    updates.category = normalizeCategory(data.category);
+  }
+  if (data.featuredImage !== undefined) {
+    updates.featuredImage = (data.featuredImage.trim() || DEFAULT_FEATURED_IMAGE).slice(0, 400000);
+  }
+  if (data.imageCaption !== undefined) {
+    updates.imageCaption = data.imageCaption.trim().slice(0, 500);
+  }
+  if (data.readTime !== undefined && data.readTime.trim()) {
+    updates.readTime = data.readTime.trim().slice(0, 40);
+  }
+  if (data.status !== undefined) {
+    updates.status = data.status === 'draft' ? 'draft' : 'published';
+  }
+  if (data.tags !== undefined) {
+    updates.tags = sanitizeTags(data.tags, updates.category || existingData.category);
+  }
+  if (data.author !== undefined) {
+    updates.author = sanitizeAuthor(data.author);
+  }
+
+  try {
+    await updateDoc(ref, updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
+  }
+
+  return docToArticle({ ...existingData, ...updates, id: safeId });
 }
 
-// Manual delete permanently
 export async function deleteArticle(id: string): Promise<void> {
-  removeLocalArticle(id);
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Please sign in with your authorized Admin Google account first.');
+  }
+
+  const safeId = sanitizeId(id);
+  const docPath = `articles/${safeId}`;
   try {
-    await fetch(`/api/articles/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
-    });
-  } catch (err) {
-    console.warn('Server delete error:', err);
+    await deleteDoc(doc(db, 'articles', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
   }
 }
 
-// Clear all demo posts permanently
 export async function clearDemoArticles(): Promise<{ success: boolean; remainingCount: number }> {
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Unauthorized admin action');
+  }
+
   const sampleIds = ['art-1', 'art-2', 'art-3', 'art-4', 'art-5', 'art-6'];
-  sampleIds.forEach(id => removeLocalArticle(id));
-
-  try {
-    const res = await fetch('/api/articles/clear-demo', {
-      method: 'POST',
-      headers: authHeaders(),
-    });
-    if (res.ok) {
-      return res.json();
+  for (const id of sampleIds) {
+    try {
+      await deleteDoc(doc(db, 'articles', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `articles/${id}`);
     }
-  } catch {}
+  }
 
-  return { success: true, remainingCount: getLocalArticles().length };
+  const remaining = await fetchArticles({ all: true });
+  return { success: true, remainingCount: remaining.length };
 }
 
-// Restore demo posts if user asks
 export async function restoreDemoArticles(): Promise<{ success: boolean; totalCount: number }> {
-  const sampleIds = ['art-1', 'art-2', 'art-3', 'art-4', 'art-5', 'art-6'];
-  sampleIds.forEach(id => unmarkIdAsDeleted(id));
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Unauthorized admin action');
+  }
 
-  try {
-    const res = await fetch('/api/articles/restore-demo', {
-      method: 'POST',
-      headers: authHeaders(),
-    });
-    if (res.ok) {
-      return res.json();
+  for (const art of initialArticles) {
+    const safeId = sanitizeId(art.id);
+    const ref = doc(db, 'articles', safeId);
+    const payload = {
+      id: safeId,
+      slug: art.slug.slice(0, 200),
+      title: art.title.slice(0, 300),
+      excerpt: art.excerpt.slice(0, 1000),
+      category: normalizeCategory(art.category),
+      featuredImage: art.featuredImage.slice(0, 400000),
+      imageCaption: (art.imageCaption || '').slice(0, 500),
+      author: sanitizeAuthor(art.author),
+      publishedAt: art.publishedAt.slice(0, 40),
+      readTime: art.readTime.slice(0, 40),
+      status: art.status === 'draft' ? 'draft' : 'published',
+      content: art.content.slice(0, 350000),
+      tags: sanitizeTags(art.tags, art.category),
+      views: 0,
+      authorUid: user.uid,
+      createdAt: serverTimestamp(),
+      updatedAtTimestamp: serverTimestamp(),
+    };
+
+    try {
+      const existing = await getDoc(ref);
+      if (!existing.exists()) {
+        await setDoc(ref, payload);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `articles/${safeId}`);
     }
-  } catch {}
-  return { success: true, totalCount: getLocalArticles().length };
+  }
+
+  const total = await fetchArticles({ all: true });
+  return { success: true, totalCount: total.length };
 }
 
+// --- FOOTER PAGES (Firestore with static defaults) ---
 export async function fetchPages(): Promise<FooterPage[]> {
+  const pageMap = new Map<string, FooterPage>();
+  initialPages.forEach((p) => pageMap.set(p.slug, p));
+
   try {
-    const res = await fetch('/api/pages');
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch {}
-  return initialPages;
+    const q = query(collection(db, 'pages'), where('slug', 'in', VALID_PAGE_SLUGS));
+    const snap = await getDocs(q);
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      if (data.slug && (VALID_PAGE_SLUGS as string[]).includes(data.slug)) {
+        pageMap.set(data.slug, {
+          slug: data.slug as FooterPage['slug'],
+          title: String(data.title || ''),
+          lastUpdated: String(data.lastUpdated || ''),
+          content: String(data.content || ''),
+        });
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'pages');
+  }
+
+  return VALID_PAGE_SLUGS.map((slug) => pageMap.get(slug)!).filter(Boolean);
 }
 
 export async function fetchPage(slug: string): Promise<FooterPage> {
+  if (!(VALID_PAGE_SLUGS as string[]).includes(slug)) {
+    throw new Error('Page not found');
+  }
+
   try {
-    const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`);
-    if (res.ok) {
-      return await res.json();
+    const snap = await getDoc(doc(db, 'pages', slug));
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        slug: slug as FooterPage['slug'],
+        title: String(data.title || ''),
+        lastUpdated: String(data.lastUpdated || ''),
+        content: String(data.content || ''),
+      };
     }
-  } catch {}
-  const found = initialPages.find(p => p.slug === slug);
-  if (found) return found;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `pages/${slug}`);
+  }
+
+  const fallback = initialPages.find((p) => p.slug === slug);
+  if (fallback) return fallback;
   throw new Error('Page not found');
 }
 
-export async function updatePage(slug: string, data: { title: string; content: string }): Promise<FooterPage> {
-  const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to update page');
-  return res.json();
-}
-
-export async function loginAdmin(email: string, password: string): Promise<{ token: string; admin: any }> {
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Invalid credentials');
+export async function updatePage(
+  slug: string,
+  data: { title: string; content: string }
+): Promise<FooterPage> {
+  const user = auth.currentUser;
+  if (!user || !(await isAuthorizedAdminUser(user))) {
+    throw new Error('Please sign in with your authorized Admin Google account first.');
   }
-  return res.json();
-}
+  if (!(VALID_PAGE_SLUGS as string[]).includes(slug)) {
+    throw new Error('Invalid page slug');
+  }
 
-export async function verifyAdminSession(): Promise<boolean> {
-  const token = getAdminToken();
-  if (!token) return false;
+  const title = data.title.trim().slice(0, 200);
+  const content = data.content.trim().slice(0, 150000);
+  if (!title || !content) {
+    throw new Error('Page title and content are required');
+  }
+
+  const lastUpdated = new Date().toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const ref = doc(db, 'pages', slug);
+  const docPath = `pages/${slug}`;
+
   try {
-    const res = await fetch('/api/auth/verify', {
-      method: 'POST',
-      headers: authHeaders(),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return !!data.valid;
-  } catch {
-    return false;
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        title,
+        content,
+        lastUpdated,
+        updatedAtTimestamp: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        slug,
+        title,
+        content,
+        lastUpdated,
+        updatedAtTimestamp: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, docPath);
   }
+
+  return {
+    slug: slug as FooterPage['slug'],
+    title,
+    lastUpdated,
+    content,
+  };
 }
 
+// --- SITE STATS (100% Real Firestore Counts) ---
 export async function fetchSiteStats(): Promise<SiteStats> {
-  const res = await fetch('/api/stats', {
-    headers: authHeaders(),
+  const allArticles = await fetchArticles({ all: true });
+  const publishedCount = allArticles.filter((a) => a.status === 'published').length;
+  const draftCount = allArticles.filter((a) => a.status === 'draft').length;
+  const totalViews = allArticles.reduce((sum, a) => sum + (a.views || 0), 0);
+  const categories: { [key: string]: number } = {};
+  allArticles.forEach((a) => {
+    categories[a.category] = (categories[a.category] || 0) + 1;
   });
-  if (!res.ok) throw new Error('Failed to fetch stats');
-  return res.json();
+
+  return {
+    totalArticles: allArticles.length,
+    publishedCount,
+    draftCount,
+    totalViews,
+    categories,
+  };
 }

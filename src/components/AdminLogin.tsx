@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { loginAdmin, setAdminToken } from '../lib/api.ts';
-import { Shield, Lock, Mail, ArrowRight, Loader2, Sparkles, KeyRound } from 'lucide-react';
-import { Logo } from './Logo.tsx';
+import { loginAdminWithGoogle } from '../lib/api.ts';
+import { PRIMARY_ADMIN_EMAIL } from '../firebase.ts';
+import { Shield, ArrowRight, Loader2, Lock, AlertCircle } from 'lucide-react';
 
 interface AdminLoginProps {
   onSuccess: (admin: any) => void;
@@ -9,140 +9,111 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onCancel }) => {
-  const [email, setEmail] = useState('admin@vitalorahealth.com');
-  const [password, setPassword] = useState('vitalora2026!');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setError(null);
     setLoading(true);
 
     try {
-      const data = await loginAdmin(email, password);
-      setAdminToken(data.token);
-      onSuccess(data.admin);
+      const admin = await loginAdminWithGoogle();
+      onSuccess(admin);
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please verify credentials.');
+      const code = err?.code || '';
+      if (code === 'auth/popup-closed-by-user') {
+        setError('Sign-in popup was closed before completing login. Please try again.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setError(
+          `This domain (${window.location.hostname}) is not yet added to Firebase Auth Authorized Domains. Open Firebase Console → Authentication → Settings → Authorized domains and add "${window.location.hostname}".`
+        );
+      } else {
+        setError(err?.message || 'Google sign-in failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFillDemo = () => {
-    setEmail('admin@vitalorahealth.com');
-    setPassword('vitalora2026!');
-    setError(null);
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-emerald-100 relative overflow-hidden">
-        {/* Subtle decorative background gradient */}
         <div className="absolute -right-16 -top-16 w-44 h-44 rounded-full bg-emerald-100/60 blur-2xl pointer-events-none" />
 
         {/* Header */}
         <div className="text-center space-y-3 mb-6 relative z-10">
-          <div className="inline-flex p-3 rounded-2xl bg-emerald-50 text-emerald-700 mb-1 border border-emerald-200 shadow-xs">
+          <div className="inline-flex p-3.5 rounded-2xl bg-emerald-50 text-emerald-700 mb-1 border border-emerald-200 shadow-xs">
             <Shield className="w-7 h-7 text-emerald-600" />
           </div>
           <h2 className="font-serif text-2xl font-bold text-slate-900">
-            Vitalora Admin Portal
+            Vitalora Admin Control
           </h2>
           <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-            Secure editorial access to publish, update, and manage articles and policy pages.
+            Secured by Firebase Authentication. Sign in with your authorized administrator Google account to manage articles, drafts, and site pages.
           </p>
         </div>
 
         {error && (
-          <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-xl">
-            {error}
+          <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-xl flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
-              Admin Email
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@vitalorahealth.com"
-                className="w-full bg-slate-50 text-slate-900 text-sm rounded-xl pl-10 pr-4 py-2.5 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
-              />
+        <div className="space-y-4 relative z-10">
+          <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3.5 flex items-center gap-3 text-xs text-emerald-900">
+            <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
+            <div>
+              <span className="font-bold block text-emerald-900">Authorized Owner Access</span>
+              <span className="text-[11px] text-emerald-700 font-mono">{PRIMARY_ADMIN_EMAIL}</span>
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full bg-slate-50 text-slate-900 text-sm rounded-xl pl-10 pr-4 py-2.5 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
-              />
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm py-3.5 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Signing in with Google...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 bg-white rounded-full p-0.5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.615 24 12.255 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 000 10.76l3.98-3.09z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.64 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                  />
+                </svg>
+                <span>Sign in with Google</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
 
-          {/* Quick Demo Helper Box */}
-          <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-xl p-3 text-xs flex items-center justify-between text-emerald-900">
-            <div className="space-y-0.5">
-              <span className="font-semibold block flex items-center gap-1 text-[11px] text-emerald-800">
-                <KeyRound className="w-3 h-3" /> Default Credentials:
-              </span>
-              <span className="text-[10px] text-emerald-700 font-mono">
-                admin@vitalorahealth.com / vitalora2026!
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="text-[11px] font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-300 shadow-xs hover:bg-emerald-50 transition-colors cursor-pointer"
-            >
-              Autofill
-            </button>
-          </div>
-
-          <div className="pt-2 space-y-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm py-3 px-4 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying Credentials...</span>
-                </>
-              ) : (
-                <>
-                  <span>Sign In to Admin Dashboard</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={onCancel}
-              className="w-full text-slate-500 hover:text-slate-700 text-xs font-semibold py-2 transition-colors cursor-pointer"
-            >
-              Return to Website
-            </button>
-          </div>
-        </form>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-full text-slate-500 hover:text-slate-700 text-xs font-semibold py-2 transition-colors cursor-pointer"
+          >
+            Return to Website
+          </button>
+        </div>
       </div>
     </div>
   );

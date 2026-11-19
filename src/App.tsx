@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Article, FooterPage } from './types/index.ts';
-import { fetchArticles, verifyAdminSession, deleteArticle, removeAdminToken } from './lib/api.ts';
+import { fetchArticles, subscribeToAdminAuth, deleteArticle, logoutAdmin } from './lib/api.ts';
 import { Header } from './components/Header.tsx';
 import { Footer } from './components/Footer.tsx';
 import { ArticleCard } from './components/ArticleCard.tsx';
@@ -61,9 +61,9 @@ export default function App() {
     );
   };
 
-  // Check admin session on mount
+  // Subscribe to Firebase Auth state on mount
   useEffect(() => {
-    verifyAdminSession().then((loggedIn) => {
+    const unsubscribe = subscribeToAdminAuth((loggedIn) => {
       setIsAdminLoggedIn(loggedIn);
       if (isExplicitAdminUrl()) {
         if (loggedIn) {
@@ -73,6 +73,7 @@ export default function App() {
         }
       }
     });
+    return () => unsubscribe();
   }, []);
 
   // Handle URL Sync (Back/Forward and direct bookmarking)
@@ -210,8 +211,8 @@ export default function App() {
     loadArticles();
   };
 
-  const handleAdminLogout = () => {
-    removeAdminToken();
+  const handleAdminLogout = async () => {
+    await logoutAdmin();
     setIsAdminLoggedIn(false);
     setCurrentView('home');
     window.history.pushState({}, '', '/');

@@ -345,8 +345,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       img.onload = () => {
         try {
-          const MAX_WIDTH = 1200;
-          const MAX_HEIGHT = 800;
+          const MAX_WIDTH = 960;
+          const MAX_HEIGHT = 640;
           let width = img.width;
           let height = img.height;
 
@@ -374,16 +374,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }
 
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          let quality = 0.76;
+          let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          while (compressedDataUrl.length > 350000 && quality > 0.35) {
+            quality -= 0.12;
+            compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          }
 
           setArticleForm(prev => ({
             ...prev,
             featuredImage: compressedDataUrl,
           }));
-          showToast('Image uploaded and optimized for high-speed loading!');
+          showToast('Image uploaded and optimized for Firebase cloud storage!');
         } catch (canvasErr) {
           console.warn('Canvas compression error:', canvasErr);
-          setArticleForm(prev => ({ ...prev, featuredImage: reader.result as string }));
+          showToast('Could not compress image. Try a smaller photo or direct image URL.', 'error');
         } finally {
           setIsUploadingImage(false);
         }
